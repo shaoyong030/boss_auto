@@ -85,7 +85,9 @@ def sync_delivery_worker(loop):
                 break
         
         if not target_tab:
-            log_info("❌ 终端未发现 Boss 页面，请确保浏览器已打开求职列表。")
+            msg = "❌ 终端未发现 Boss 页面，请确保浏览器已打开求职列表。"
+            log_info(msg)
+            asyncio.run_coroutine_threadsafe(notify_tg(msg), loop)
             return []
         
         page = target_tab
@@ -104,12 +106,19 @@ def sync_delivery_worker(loop):
 
         processed_keys = set()
         while len(delivered) < 20:
-            if state["interrupt_flag"]: break
+            if state["interrupt_flag"]: 
+                msg = "🛑 收到中断指令，正在停止当前扫描..."
+                log_info(msg)
+                asyncio.run_coroutine_threadsafe(notify_tg(msg), loop)
+                break
             
+            # 第一处检测：页面通用提示
             if any(page.ele(f'text:{kw}', timeout=0.5) for kw in LIMIT_KEYWORDS):
                 state["block_today"] = True
                 state["block_date"] = datetime.now().date()
-                asyncio.run_coroutine_threadsafe(notify_tg("⚠️ 提示：检测到今日已达上限！"), loop)
+                msg = "🛑 提示：检测到页面有「已达上限」相关字眼，今日投递被锁定。"
+                log_info(msg)
+                asyncio.run_coroutine_threadsafe(notify_tg(msg), loop)
                 break
 
             cards = page.eles('css=.job-card-wrapper') or page.eles('css=.job-card-box')
@@ -147,53 +156,77 @@ def sync_delivery_worker(loop):
                         time.sleep(1.5)
                         
                         # =======================================================
-                        # 新增：处理达到 120 次沟通时“还剩30次”的温馨提示弹窗
+                        # 处理达到 120 次沟通时“还剩30次”的温馨提示弹窗
                         # =======================================================
                         warning_prompt = page.ele('text:还剩30次', timeout=0.5) or page.ele('text:120位BOSS沟通', timeout=0.5)
                         if warning_prompt:
                             ok_btn = page.ele('text:好', timeout=1.0)
                             if ok_btn:
                                 ok_btn.click()
-                                time.sleep(1.5) # 给一点时间让弹窗消失并进入聊天界面
-                                asyncio.run_coroutine_threadsafe(
-                                    notify_tg("⚠️ 触发 [还剩30次] 沟通提醒，已自动点击「好」继续投递。"), loop
-                                )
+                                time.sleep(1.5) 
+                                warn_msg = "⚠️ 触发 [还剩30次] 沟通提醒，已自动点击「好」继续投递。"
+                                log_info(warn_msg)
+                                asyncio.run_coroutine_threadsafe(notify_tg(warn_msg), loop)
                         # =======================================================
 
+                        # 第二处检测：点击沟通后的弹窗提示
                         if any(page.ele(f'text:{kw}', timeout=0.5) for kw in LIMIT_KEYWORDS):
                             state["block_today"] = True
                             state["block_date"] = datetime.now().date()
+                            msg = "🛑 沟通时触发上限提示，本轮强行结束，今日投递锁定。"
+                            log_info(msg)
+                            asyncio.run_coroutine_threadsafe(notify_tg(msg), loop)
                             return delivered
 
                         delivered.append(f"{company_name} | {job_name}")
                         success_msg = f"✨ 成功出击：{company_name}\n💼 岗位：{job_name}\n💰 薪资：{salary_val}K"
+                        
+                        log_info(f"✅ 成功投递 -> {company_name} | {job_name} | {salary_val}K")
                         asyncio.run_coroutine_threadsafe(notify_tg(success_msg), loop)
                         
                         time.sleep(1.2)
                         stay = page.ele('text:留在此页', timeout=1.5)
                         if stay: stay.click()
                         time.sleep(random.uniform(5, 10))
-                except: continue
+                except Exception as inner_e: 
+                    continue
             
             if not found_action:
                 page.scroll.down(800)
                 time.sleep(2.5)
                 
     except Exception as e:
-        log_info(f"引擎异常: {e}")
+        msg = f"❌ 引擎执行异常: {e}"
+        log_info(msg)
+        asyncio.run_coroutine_threadsafe(notify_tg(msg), loop)
+        
     return delivered
 
 async def execute_delivery_round():
     if state["task_running"] or state["block_today"]: return
     state["task_running"] = True
     state["interrupt_flag"] = False
+    log_info("🚀 开始执行新一轮 Boss 简历投递扫描...")
     try:
         current_loop = asyncio.get_running_loop()
         delivered = await asyncio.to_thread(sync_delivery_worker, current_loop)
+        
+        # 汇报本轮结果给 TG
         if delivered:
-            await notify_tg(f"✅ 战报：本次成功投递了 {len(delivered)} 份简历。")
+            report_msg = f"✅ 战报：本次成功投递了 {len(delivered)} 份简历。"
+            log_info(report_msg)
+            await notify_tg(report_msg)
+        else:
+            # 如果没有投递且不是因为被 block 的，才发未找到的提示（避免被 block 时连发两条）
+            if not state["block_today"]:
+                empty_msg = "ℹ️ 本轮扫描结束，未找到符合条件或未成功投递的新岗位。"
+                log_info(empty_msg)
+                await notify_tg(empty_msg)
+                
     except Exception as e:
-        log_info(f"任务异常: {e}")
+        msg = f"❌ 任务调度异常: {e}"
+        log_info(msg)
+        await notify_tg(msg)
     finally:
         state["task_running"] = False
 
@@ -208,18 +241,24 @@ async def handle_tg_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "1":
             if state["block_today"]:
                 await update.message.reply_text("🚫 今日已达上限")
+                log_info("📱 TG指令: 请求手动投递失败，今日已达上限。")
             elif not state["task_running"]: 
                 asyncio.create_task(execute_delivery_round())
                 await update.message.reply_text("🚀 启动手动扫描...")
+                log_info("📱 TG指令: 启动手动投递。")
+            else:
+                await update.message.reply_text("⏳ 任务正在运行中，请勿重复启动。")
             
         elif text == "2":
             state["interrupt_flag"] = True
             await update.message.reply_text("🛑 正在停止...")
+            log_info("📱 TG指令: 收到停止指令。")
             
         elif text == "3":
             state["auto_enabled"] = False
             state["next_run_time"] = None
             await update.message.reply_text("🔴 自动投递已关闭")
+            log_info("📱 TG指令: 自动投递已关闭。")
             
         elif text == "4":
             state["auto_enabled"] = True
@@ -227,11 +266,13 @@ async def handle_tg_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if 8 <= now.hour < 17:
                 state["next_run_time"] = now.timestamp() + 3600
                 await update.message.reply_text("🟢 开启！工作时间内将立刻执行。")
+                log_info("📱 TG指令: 开启自动投递，即将执行。")
                 if not state["task_running"]: asyncio.create_task(execute_delivery_round())
             else:
                 target = datetime.combine(now.date() + (timedelta(days=1) if now.hour >= 17 else timedelta(0)), dt_time(8, 0))
                 state["next_run_time"] = target.timestamp()
                 await update.message.reply_text(f"🟢 已激活！将在 {target.strftime('%H:%M')} 唤醒。")
+                log_info(f"📱 TG指令: 开启自动投递，将在 {target.strftime('%H:%M')} 唤醒。")
                 
         elif text == "5":
             status = "工作中 🏃" if state["task_running"] else "待命中 😴"
@@ -240,6 +281,7 @@ async def handle_tg_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             nxt = datetime.fromtimestamp(state["next_run_time"]).strftime('%H:%M:%S') if state["next_run_time"] else "无"
             
             await update.message.reply_text(f"【状态汇报】\n运行: {status}\n自动: {auto_status}\n下次: {nxt}\n上限: {limit}")
+            log_info("📱 TG指令: 处理了状态查询请求。")
             
     except Exception as e:
         log_info(f"处理指令出错: {e}")
@@ -252,14 +294,19 @@ async def auto_delivery_loop():
         if state["auto_enabled"] and not state["task_running"]:
             if state["block_today"] and state["block_date"] != now.date():
                 state["block_today"] = False
+                msg = "🔄 新的一天，已重置今日触达上限状态。"
+                log_info(msg)
+                await notify_tg(msg)
             
             if state["next_run_time"] and now.timestamp() >= state["next_run_time"]:
                 if 8 <= now.hour < 17:
-                    if not state["block_today"]: asyncio.create_task(execute_delivery_round())
+                    if not state["block_today"]: 
+                        asyncio.create_task(execute_delivery_round())
                     state["next_run_time"] = now.timestamp() + 3600 + random.randint(-300, 300)
                 else:
                     target = datetime.combine(now.date() + (timedelta(days=1) if now.hour >= 17 else timedelta(0)), dt_time(8, 0))
                     state["next_run_time"] = target.timestamp() + random.randint(0, 300)
+                    log_info(f"🌙 非工作时间，下次扫描定于 {datetime.fromtimestamp(state['next_run_time']).strftime('%Y-%m-%d %H:%M:%S')}。")
 
 async def main():
     global tg_app
@@ -280,11 +327,15 @@ async def main():
     await tg_app.start()
     await tg_app.updater.start_polling()
     
-    await notify_tg("🟢 程序已重启，自动投递默认开启。")
+    # 初始化完成的提示
+    await notify_tg("🟢 程序已启动，自动投递默认开启。异常状态将会在此同步。")
+    log_info("✅ 机器人服务已启动，正在监听 TG 指令。")
+    log_info("✅ 开始进入自动投递循环监听模式...")
+    
     await auto_delivery_loop()
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        pass
+        log_info("⏹️ 收到退出信号，程序已关闭。")
