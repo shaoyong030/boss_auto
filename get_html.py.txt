@@ -1,0 +1,32 @@
+from DrissionPage import ChromiumPage, ChromiumOptions
+
+# 连接现有的浏览器
+co = ChromiumOptions().set_local_port(9223)
+page = ChromiumPage(co)
+
+# 确保在 Boss 页面
+target_tab = None
+for tab_id in page.tab_ids:
+    tab = page.get_tab(tab_id)
+    if "zhipin.com/web/geek" in tab.url:  
+        target_tab = tab
+        break
+
+if target_tab:
+    page = target_tab
+    print("锁定 Boss 页面，开始抓取第一个岗位卡片...")
+    
+    # 找到第一个卡片
+    card = page.ele('css=.job-card-wrapper')
+    if not card:
+        card = page.ele('xpath=//li[contains(@class, "job-card")]')
+        
+    if card:
+        # 把卡片的完整 HTML 结构保存到 txt 文件中
+        with open("card_code.txt", "w", encoding="utf-8") as f:
+            f.write(card.html)
+        print("✅ 抓取成功！已将代码保存到当前目录下的 card_code.txt")
+    else:
+        print("❌ 没找到卡片元素")
+else:
+    print("未找到 Boss 标签页")
