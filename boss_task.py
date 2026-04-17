@@ -59,10 +59,21 @@ async def notify_tg(text: str):
         log_info(f"TG 通知失败: {e}")
 
 def get_salary_by_ocr(salary_element):
+    if not salary_element:
+        return 0
     try:
         img_bytes = salary_element.get_screenshot()
         res = ocr.classification(img_bytes)
+        # 将容易误识别的字母替换为数字0
+        res = res.replace('O', '0').replace('o', '0').replace('Q', '0')
         res_clean = re.sub(r'[^\d-]', '', res)
+        
+        # 典型格式是 40-60K，提取短横线前面的起薪部分
+        if '-' in res_clean:
+            start_str = res_clean.split('-')[0]
+            if start_str.isdigit():
+                return int(start_str)
+                
         match = re.search(r'(\d+)', res_clean)
         return int(match.group(1)) if match else 0
     except:
@@ -80,7 +91,7 @@ def sync_delivery_worker(loop):
         target_tab = None
         for tab_id in page.tab_ids:
             tab = page.get_tab(tab_id)
-            if "zhipin.com/web/geek" in tab.url:
+            if "zhipin.com/web/geek" in tab.url and "/chat" not in tab.url:
                 target_tab = tab
                 break
         
@@ -105,7 +116,14 @@ def sync_delivery_worker(loop):
                 break
 
         processed_keys = set()
+        no_card_count = 0
+        no_action_count = 0
         while len(delivered) < 20:
+            if "/chat" in page.url:
+                page.back()
+                time.sleep(3)
+                continue
+
             if state["interrupt_flag"]: 
                 msg = "🛑 收到中断指令，正在停止当前扫描..."
                 log_info(msg)
@@ -121,9 +139,15 @@ def sync_delivery_worker(loop):
                 asyncio.run_coroutine_threadsafe(notify_tg(msg), loop)
                 break
 
-            cards = page.eles('css=.job-card-wrapper') or page.eles('css=.job-card-box')
+            cards = page.eles('css=.job-card-wrapper') or page.eles('css=.job-card-box') or page.eles('css=.job-card-wrap')
             if not cards: 
+                no_card_count += 1
+                if no_card_count >= 5:
+                    log_info("⚠️ 连续多次未检测到职位卡片，可能页面结构改变或进入非列表页，强行结束本轮。")
+                    break
                 time.sleep(3); continue
+            
+            no_card_count = 0
             
             found_action = False
             for card in cards:
@@ -141,7 +165,7 @@ def sync_delivery_worker(loop):
                     
                     salary_ele = card.ele('css=.salary', timeout=0.5) or card.ele('css=.job-salary', timeout=0.5)
                     salary_val = get_salary_by_ocr(salary_ele)
-                    if 0 < salary_val < MIN_SALARY: continue
+                    if salary_val < MIN_SALARY: continue
                     
                     found_action = True
                     card.scroll.to_see()
@@ -192,8 +216,25 @@ def sync_delivery_worker(loop):
                     continue
             
             if not found_action:
+                no_action_count += 1
                 page.scroll.down(800)
                 time.sleep(2.5)
+                
+                if no_action_count >= 2:
+                    try:
+                        next_btn = page.ele('.ui-icon-arrow-right', timeout=0.5) or page.ele('text:下一页', timeout=0.5)
+                        if next_btn:
+                            next_btn.click()
+                            time.sleep(3)
+                            no_action_count = 0
+                    except:
+                        pass
+                
+                if no_action_count >= 10:
+                    log_info("⚠️ 连续10次未发现新岗位，结束本轮扫描。")
+                    break
+            else:
+                no_action_count = 0
                 
     except Exception as e:
         msg = f"❌ 引擎执行异常: {e}"
@@ -320,8 +361,14 @@ async def main():
     if PROXY_URL:
         os.environ["HTTP_PROXY"] = PROXY_URL
         os.environ["HTTPS_PROXY"] = PROXY_URL
+        # 🚀 核心修复：大小写双保险，防止底层网络库拦截本地通讯
+        os.environ["NO_PROXY"] = "localhost,127.0.0.1,::1"
+        os.environ["no_proxy"] = "localhost,127.0.0.1,::1"
     
-    tg_app = ApplicationBuilder().token(TOKEN).build()
+    builder = ApplicationBuilder().token(TOKEN)
+    if PROXY_URL:
+        builder = builder.proxy(PROXY_URL).get_updates_proxy(PROXY_URL)
+    tg_app = builder.build()
     tg_app.add_handler(MessageHandler(filters.TEXT, handle_tg_message))
     await tg_app.initialize()
     await tg_app.start()
