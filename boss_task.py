@@ -156,7 +156,18 @@ def sync_delivery_worker(loop):
                     job_name_ele = card.ele('css=.job-name', timeout=0.5)
                     if not job_name_ele: continue
                     job_name = job_name_ele.text
-                    if not any(kw.lower() in job_name.lower() for kw in TARGET_KEYWORDS): continue
+                    job_name_lower = job_name.lower()
+                    is_target = any(kw.lower() in job_name_lower for kw in TARGET_KEYWORDS)
+                    
+                    if not is_target:
+                        # 额外放宽条件：标题中同时包含 ai 和 产品/product
+                        if "ai" in job_name_lower and ("产品" in job_name_lower or "product" in job_name_lower):
+                            is_target = True
+                        # 标题包含 "产品专家" 等
+                        elif any(kw in job_name_lower for kw in ["产品专家", "产品合伙人", "product manager", "product director"]):
+                            is_target = True
+                            
+                    if not is_target: continue
                     
                     company_name = (card.ele('css=.company-name', timeout=0.5) or 
                                    card.ele('css=.boss-name', timeout=0.5)).text
