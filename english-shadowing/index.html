@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowPro - 英语视频跟读学习</title>
+  <meta name="description" content="通过视频跟读法提升英语口语，支持YouTube视频、字幕同步、语音识别评分">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="app-header">
+      <div class="header-left">
+        <button id="btn-back" class="icon-btn hidden" aria-label="返回">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <h1 id="header-title">ShadowPro</h1>
+      </div>
+      <div class="header-right">
+        <button id="btn-settings" class="icon-btn" aria-label="设置">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="app-main">
+      <!-- HOME VIEW -->
+      <section id="view-home" class="view active">
+        <div class="home-hero">
+          <div class="hero-glow"></div>
+          <h2>🎬 视频跟读，练就地道英语</h2>
+          <p>Shadowing — 模仿母语者的语音语调，最高效的口语训练法</p>
+        </div>
+
+        <div class="url-input-section glass-card">
+          <h3>📎 加载 YouTube 视频</h3>
+          <div class="url-input-row">
+            <input type="text" id="youtube-url" placeholder="粘贴 YouTube 链接，例如 https://youtube.com/watch?v=..." autocomplete="off">
+            <button id="btn-load-url" class="accent-btn">加载</button>
+          </div>
+          <div class="file-upload-row">
+            <label class="upload-label" for="srt-upload">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              上传字幕文件 (SRT/VTT)
+            </label>
+            <input type="file" id="srt-upload" accept=".srt,.vtt" class="hidden-input">
+            <span id="srt-filename" class="file-name">未选择文件</span>
+          </div>
+        </div>
+
+        <div class="courses-section">
+          <h3>✨ 精选课程</h3>
+          <div class="category-tabs">
+            <button class="cat-tab active" data-cat="all">全部</button>
+            <button class="cat-tab" data-cat="daily">日常对话</button>
+            <button class="cat-tab" data-cat="ted">TED演讲</button>
+            <button class="cat-tab" data-cat="movie">影视台词</button>
+            <button class="cat-tab" data-cat="news">新闻英语</button>
+          </div>
+          <div id="course-grid" class="course-grid"></div>
+        </div>
+      </section>
+
+      <!-- STUDY VIEW -->
+      <section id="view-study" class="view">
+        <div id="player-container">
+          <div id="youtube-player-wrap">
+            <div id="youtube-player"></div>
+          </div>
+          <div id="demo-player" class="demo-player hidden">
+            <div class="demo-visual">
+              <div class="demo-wave" id="demo-wave"></div>
+              <p class="demo-label">🔊 TTS 朗读模式</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="subtitle-panel" class="glass-card">
+          <div class="subtitle-header">
+            <span class="subtitle-title">📝 字幕</span>
+            <div class="subtitle-controls">
+              <button id="btn-toggle-en" class="small-btn active" data-lang="en">EN</button>
+              <button id="btn-toggle-cn" class="small-btn active" data-lang="cn">中</button>
+            </div>
+          </div>
+          <div id="subtitle-list" class="subtitle-list"></div>
+        </div>
+
+        <div id="shadowing-panel" class="glass-card">
+          <div class="mode-toggle">
+            <button id="btn-normal-mode" class="mode-btn active">▶ 普通模式</button>
+            <button id="btn-shadow-mode" class="mode-btn">🎯 跟读模式</button>
+          </div>
+
+          <!-- Normal mode controls -->
+          <div id="normal-controls" class="normal-controls">
+            <div class="speed-control">
+              <label>速度</label>
+              <input type="range" id="speed-slider" min="0.5" max="2" step="0.25" value="1">
+              <span id="speed-value">1.0x</span>
+            </div>
+            <div class="ab-loop">
+              <button id="btn-loop-a" class="small-btn">🅰 起点</button>
+              <button id="btn-loop-b" class="small-btn">🅱 终点</button>
+              <button id="btn-loop-clear" class="small-btn" disabled>✕ 清除</button>
+            </div>
+          </div>
+
+          <!-- Shadowing mode controls -->
+          <div id="shadow-controls" class="shadow-controls hidden">
+            <div id="current-sentence" class="current-sentence">
+              <p id="sentence-en" class="sentence-en">准备开始跟读...</p>
+              <p id="sentence-cn" class="sentence-cn"></p>
+            </div>
+
+            <div id="score-display" class="score-display hidden">
+              <div class="score-ring">
+                <svg viewBox="0 0 120 120">
+                  <circle class="score-bg" cx="60" cy="60" r="52" />
+                  <circle id="score-circle" class="score-fill" cx="60" cy="60" r="52" />
+                </svg>
+                <span id="score-value" class="score-value">0%</span>
+              </div>
+              <div id="word-diff" class="word-diff"></div>
+              <p id="ai-feedback" class="ai-feedback"></p>
+            </div>
+
+            <div class="record-controls">
+              <button id="btn-play-original" class="ctrl-btn" title="播放原声">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+                <span>原声</span>
+              </button>
+              <button id="btn-record" class="record-btn" title="按住录音">
+                <div class="record-ring"></div>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+              </button>
+              <button id="btn-play-recording" class="ctrl-btn" title="播放录音" disabled>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                <span>录音</span>
+              </button>
+            </div>
+
+            <div class="nav-controls">
+              <button id="btn-prev-sentence" class="nav-btn">⏮ 上一句</button>
+              <button id="btn-retry" class="nav-btn accent">🔄 重试</button>
+              <button id="btn-next-sentence" class="nav-btn">下一句 ⏭</button>
+            </div>
+
+            <div class="speed-control">
+              <label>速度</label>
+              <input type="range" id="shadow-speed-slider" min="0.5" max="2" step="0.25" value="0.75">
+              <span id="shadow-speed-value">0.75x</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- VOCABULARY VIEW -->
+      <section id="view-vocab" class="view">
+        <div class="vocab-header">
+          <h2>📚 生词本</h2>
+          <button id="btn-review-mode" class="accent-btn">🎴 卡片复习</button>
+        </div>
+        <div id="vocab-empty" class="empty-state">
+          <p>📖</p>
+          <p>还没有收藏的生词</p>
+          <p class="hint">在学习页面点击字幕中的单词即可添加</p>
+        </div>
+        <div id="vocab-list" class="vocab-list"></div>
+        <div id="review-overlay" class="review-overlay hidden">
+          <div class="review-card glass-card">
+            <button id="btn-close-review" class="modal-close">&times;</button>
+            <div id="review-front" class="review-front">
+              <h3 id="review-word"></h3>
+              <button id="btn-show-answer" class="accent-btn">显示答案</button>
+            </div>
+            <div id="review-back" class="review-back hidden">
+              <h3 id="review-word-back"></h3>
+              <p id="review-phonetic" class="phonetic"></p>
+              <p id="review-meaning"></p>
+              <div class="review-actions">
+                <button class="review-btn forgot" data-result="forgot">😅 忘了</button>
+                <button class="review-btn remembered" data-result="ok">🤔 模糊</button>
+                <button class="review-btn easy" data-result="easy">😎 记住了</button>
+              </div>
+            </div>
+            <div class="review-progress">
+              <span id="review-progress-text">0 / 0</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STATS VIEW -->
+      <section id="view-stats" class="view">
+        <h2>📊 学习统计</h2>
+        <div class="stats-grid">
+          <div class="stat-card glass-card">
+            <div class="stat-icon">🔥</div>
+            <div class="stat-value" id="stat-streak">0</div>
+            <div class="stat-label">连续打卡(天)</div>
+          </div>
+          <div class="stat-card glass-card">
+            <div class="stat-icon">⏱</div>
+            <div class="stat-value" id="stat-time">0</div>
+            <div class="stat-label">今日学习(分钟)</div>
+          </div>
+          <div class="stat-card glass-card">
+            <div class="stat-icon">💬</div>
+            <div class="stat-value" id="stat-sentences">0</div>
+            <div class="stat-label">跟读句数</div>
+          </div>
+          <div class="stat-card glass-card">
+            <div class="stat-icon">🎯</div>
+            <div class="stat-value" id="stat-accuracy">0%</div>
+            <div class="stat-label">平均准确率</div>
+          </div>
+        </div>
+        <div class="chart-section glass-card">
+          <h3>📈 本周学习趋势</h3>
+          <canvas id="weekly-chart" width="600" height="250"></canvas>
+        </div>
+        <div class="chart-section glass-card">
+          <h3>🏆 学习成就</h3>
+          <div id="achievements" class="achievements"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav id="app-nav">
+      <button class="nav-item active" data-view="home" aria-label="首页">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        <span>首页</span>
+      </button>
+      <button class="nav-item" data-view="study" aria-label="学习">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM10 8l6 4-6 4z"/></svg>
+        <span>学习</span>
+      </button>
+      <button class="nav-item" data-view="vocab" aria-label="生词">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>
+        <span>生词</span>
+      </button>
+      <button class="nav-item" data-view="stats" aria-label="统计">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+        <span>统计</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Word Lookup Modal -->
+  <div id="word-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content glass-card">
+      <button id="btn-close-modal" class="modal-close">&times;</button>
+      <h3 id="modal-word" class="modal-word"></h3>
+      <p id="modal-phonetic" class="phonetic"></p>
+      <div id="modal-meanings" class="modal-meanings"></div>
+      <button id="btn-save-word" class="accent-btn full-width">⭐ 收藏到生词本</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Scripts -->
+  <script src="js/courses.js"></script>
+  <script src="js/subtitle.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/recorder.js"></script>
+  <script src="js/speech.js"></script>
+  <script src="js/vocabulary.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/shadowing.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

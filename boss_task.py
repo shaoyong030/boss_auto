@@ -173,11 +173,23 @@ def sync_delivery_worker(loop):
         page = ChromiumPage(co)
         
         target_tab = None
+        fallback_tab = None  # 任意 zhipin.com 的 tab（非 chat 页）
         for tab_id in page.tab_ids:
             tab = page.get_tab(tab_id)
-            if "zhipin.com/web/geek" in tab.url and "/chat" not in tab.url:
+            url = tab.url
+            if "zhipin.com/web/geek" in url and "/chat" not in url:
                 target_tab = tab
                 break
+            elif "zhipin.com" in url and "/chat" not in url and not fallback_tab:
+                fallback_tab = tab
+        
+        if not target_tab and fallback_tab:
+            # 浏览器有 Boss 页面，但被导航到了非求职列表页（如首页）
+            # 自动跳转回求职列表页
+            log_info(f"⚠️ Boss 页面不在求职列表(当前: {fallback_tab.url[:60]})，自动导航回求职页...")
+            fallback_tab.get("https://www.zhipin.com/web/geek/jobs")
+            time.sleep(5)
+            target_tab = fallback_tab
         
         if not target_tab:
             msg = "❌ 终端未发现 Boss 页面，请确保浏览器已打开求职列表。"
@@ -320,9 +332,7 @@ def sync_delivery_worker(loop):
                             delivered.append(f"{company_name} | {job_name}")
                             delivered_history.add(dedup_key)
                             save_delivered_history(delivered_history)
-                            success_msg = f"✨ 成功出击：{company_name}\n💼 岗位：{job_name}"
                             log_info(f"✅ 成功投递 -> {company_name} | {job_name} [确认:{confirm_reason}]")
-                            asyncio.run_coroutine_threadsafe(notify_tg(success_msg), loop)
                         else:
                             log_info(f"⚠️ 点击了立即沟通但未确认成功 -> {company_name} | {job_name}")
                         
@@ -377,8 +387,11 @@ async def execute_delivery_round():
         
         # 汇报本轮结果给 TG
         if delivered:
-            report_msg = f"✅ 战报：本次成功投递了 {len(delivered)} 份简历。"
-            log_info(report_msg)
+            lines = [f"✅ 战报：本次成功投递了 {len(delivered)} 份简历。\n"]
+            for i, item in enumerate(delivered, 1):
+                lines.append(f"{i}. {item}")
+            report_msg = "\n".join(lines)
+            log_info(f"✅ 战报：本次成功投递了 {len(delivered)} 份简历。")
             await notify_tg(report_msg)
         else:
             # 如果没有投递且不是因为被 block 的，才发未找到的提示（避免被 block 时连发两条）
